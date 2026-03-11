@@ -1,19 +1,24 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ShieldAlert, Crosshair, Activity, Upload, Database, AlertTriangle, Info, MapPin } from 'lucide-react';
 
-// --- INITIAL DATA (Includes Sea/Land impacts) ---
-const INITIAL_CSV = `Date,Shortcode,URL,Title,Summary,Likes,ballistic_detected,ballistic_intercepted,UAV_detected,UAV_intercepted,ballistic_sea,ballistic_land,UAV_sea,UAV_land
-2026-02-28,DVUX_J9GjOR,https://www.instagram.com/p/DVUX_J9GjOR/,UAE air defences intercept 132 of 137 missiles and 195 of 209 drones (Day 1),"",48000,137,132,209,195,5,0,0,14
-2026-03-01,DVV_YMyEr6G,https://www.instagram.com/p/DVV_YMyEr6G/,"UAE deals with 20 ballistic missiles, 2 cruise missiles and 311 drones (Day 2)","",45000,28,20,332,311,8,0,0,21
-2026-03-02,DAY3_DATA,https://www.instagram.com/modgovae,Intercept operations continue (Day 3),"",30000,15,12,200,180,3,0,10,10
-2026-03-03,DAY4_DATA,https://www.instagram.com/modgovae,Air defence neutralizes incoming threats (Day 4),"",28000,15,12,200,180,3,0,10,10
-2026-03-04,DAY5_DATA,https://www.instagram.com/modgovae,Defense forces maintain high readiness (Day 5),"",25000,15,13,150,140,2,0,5,5
-2026-03-05,DAY6_DATA,https://www.instagram.com/modgovae,Continued interception of hostile drones (Day 6),"",22000,12,10,150,140,2,0,5,5
-2026-03-06,DAY7_DATA,https://www.instagram.com/modgovae,Ministry affirms protection of airspace (Day 7),"",20000,12,11,100,96,1,0,2,2
-2026-03-07,DAY8_DATA,https://www.instagram.com/modgovae,Hostile projectiles intercepted (Day 8),"",18000,12,11,102,100,1,0,1,1
-2026-03-08,DVqonH8iEuY,https://www.instagram.com/p/DVqonH8iEuY/,Update on interception,"",2200,15,12,18,17,3,0,0,1
-2026-03-09,DVqonH8iEuY,https://www.instagram.com/p/DVqonH8iEuY/,MoD announces martyrdom of two UAE Armed Forces members,"",5200,15,12,18,17,3,0,0,1
-2026-03-10,DVtISYRCBZI,https://www.instagram.com/p/DVtISYRCBZI/,"UAE air defences intercept 8 ballistic missiles, 26 UAVs","",15000,9,8,35,26,1,0,0,9`;
+// Load all CSV files in ../data as raw text at build time.
+const CSV_FILES = import.meta.glob('../data/*.csv', {
+  eager: true,
+  query: '?raw',
+  import: 'default'
+});
+
+const getLatestLocalCsv = () => {
+  const entries = Object.entries(CSV_FILES);
+  if (entries.length === 0) return null;
+
+  // Choose the lexicographically latest file path (works for date-versioned names).
+  const [path, content] = entries.sort(([a], [b]) => a.localeCompare(b)).at(-1);
+  return {
+    fileName: path.split('/').pop() || 'Local dataset',
+    content
+  };
+};
 
 // --- ROBUST CSV PARSER ---
 const parseCSV = (str) => {
@@ -63,8 +68,16 @@ export default function App() {
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    const parsed = parseCSV(INITIAL_CSV);
+    const latestCsv = getLatestLocalCsv();
+    if (!latestCsv) {
+      setFileName('No local CSV found in /data');
+      setData([]);
+      return;
+    }
+
+    const parsed = parseCSV(latestCsv.content);
     const formatted = formatData(parsed);
+    setFileName(latestCsv.fileName);
     setData(formatted);
   }, []);
 
