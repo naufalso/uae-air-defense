@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { ShieldAlert, Crosshair, Activity, Upload, Database, Info, MapPin } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { ShieldAlert, Crosshair, Activity, Database, Info, MapPin } from 'lucide-react';
 import {
   Area,
   Bar,
@@ -194,34 +194,7 @@ export default function App() {
   const [isCumulative, setIsCumulative] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [loadError, setLoadError] = useState(initialState.loadError);
-  const fileInputRef = useRef(null);
   const PAGE_SIZE = 10;
-
-  const applyCsvContent = (content, sourceName) => {
-    const parsed = parseCSV(content);
-    if (parsed.length === 0) {
-      setData([]);
-      setLoadError(`No valid dashboard rows were found in ${sourceName}.`);
-      return;
-    }
-
-    setData(formatData(parsed));
-    setLoadError('');
-    setCurrentPage(1);
-  };
-
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setFileName(file.name);
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        const text = evt.target.result;
-        applyCsvContent(text, file.name);
-      };
-      reader.readAsText(file);
-    }
-  };
 
   // --- DERIVED METRICS ---
   const metrics = useMemo(() => {
@@ -314,29 +287,11 @@ export default function App() {
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
             <ShieldAlert className="text-red-500 h-8 w-8" />
-            UAE Air Defense
+            UAE Air Defense Incident Dashboard
           </h1>
           <p className="text-slate-400 mt-1 flex items-center gap-2">
             <Database className="w-4 h-4" /> Data Source: {fileName}
           </p>
-        </div>
-        
-        <div className="flex flex-wrap gap-3">
-          <input 
-            type="file" 
-            accept=".csv" 
-            className="hidden" 
-            ref={fileInputRef} 
-            onChange={handleFileUpload} 
-          />
-          <button 
-            onClick={() => fileInputRef.current.click()}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-blue-900/20"
-          >
-            <Upload className="w-4 h-4" />
-            <span className="hidden sm:inline">Upload Update CSV</span>
-            <span className="sm:hidden">Upload</span>
-          </button>
         </div>
       </header>
 
@@ -500,7 +455,7 @@ export default function App() {
               {data.length === 0 && (
                 <tr>
                   <td colSpan="4" className="px-4 py-8 text-center text-slate-500">
-                    No data available. Please upload a CSV.
+                    No data available from the local dashboard dataset.
                   </td>
                 </tr>
               )}
@@ -555,6 +510,18 @@ export default function App() {
         </div>
         <p className="w-full">
           If you spot any inaccuracies or discrepancies in the data extraction, please report them to me so the dataset can be promptly updated.
+        </p>
+        <p className="mt-3 w-full">
+          Maintained by{' '}
+          <a
+            href="https://github.com/naufalso"
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-blue-400 transition-colors hover:text-blue-300 hover:underline"
+          >
+            github.com/naufalso
+          </a>
+          .
         </p>
       </footer>
 
