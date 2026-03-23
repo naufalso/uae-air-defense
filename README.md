@@ -17,20 +17,27 @@ Interactive React dashboard for visualizing UAE air defense incident metrics fro
 - Vite
 - Tailwind CSS
 - Lucide React (icons)
+- Python 3.11+
+- `uv` for Python dependency management and CLI execution
+- Instaloader and Requests for raw Instagram data collection
 
 ## Project Structure
 
 ```text
 .
-├── data/                     # Source CSV datasets
+├── data/                     # Curated dashboard CSVs and generated raw artifacts
 ├── public/
+├── scripts/                  # Thin wrappers around packaged Python CLIs
 ├── src/
-│   ├── App.jsx               # Main dashboard logic and UI
+│   ├── App.jsx               # Dashboard shell and page-level React state
+│   ├── lib/
+│   │   └── dashboardData.js  # CSV parsing, date normalization, aggregation helpers
 │   ├── main.jsx              # React entry point
-│   ├── index.css
-│   └── App.css
+│   └── uae_defense/          # Python scraping and URL-ingest package
+├── tests/                    # Python tests for pipeline utilities
 ├── index.html
-└── package.json
+├── package.json
+└── pyproject.toml
 ```
 
 ## Getting Started
@@ -44,6 +51,7 @@ Interactive React dashboard for visualizing UAE air defense incident metrics fro
 
 ```bash
 npm install
+uv sync --group dev
 ```
 
 ### Run Development Server
@@ -68,6 +76,13 @@ npm run preview
 
 ```bash
 npm run lint
+uv run ruff check
+```
+
+## Test
+
+```bash
+uv run pytest
 ```
 
 ## Data Format
@@ -83,6 +98,19 @@ Notes:
 - `Date` is required and used as the grouping key.
 - Numeric fields are parsed as integers. Empty/missing numeric values are treated as `0`.
 - If multiple rows share the same date, likes are summed and defense counts are consolidated in the dashboard.
+
+## Python Pipeline
+
+The Python side generates raw Instagram records that can later be transformed into the curated `_impact.csv` files consumed by the dashboard.
+
+Packaged CLI entrypoints:
+
+```bash
+uv run uae-scrape-instagram --username modgovae --start-date 2026-03-11 --end-date 2026-03-23 --output data/raw_modgovae_2026-03-11_2026-03-23.csv
+uv run uae-build-raw-from-urls --input data/modgovae_urls_2026-03-11_2026-03-23.txt --output data/raw_modgovae_2026-03-11_2026-03-23.csv
+```
+
+The fallback `uae-build-raw-from-urls` flow infers raw post metadata from public HTML and should be treated as lower-confidence than the direct scraping path.
 
 ## Local Dataset Selection
 

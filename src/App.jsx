@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { ShieldAlert, Crosshair, Activity, Upload, Database, Info, MapPin } from 'lucide-react';
 import {
   Area,
@@ -12,71 +12,13 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import {
+  formatData,
+  getLatestLocalCsv,
+  parseCSV,
+  toTimelineData,
+} from './lib/dashboardData';
 
-// Load all CSV files in ../data as raw text at build time.
-const CSV_FILES = import.meta.glob('../data/*.csv', {
-  eager: true,
-  query: '?raw',
-  import: 'default'
-});
-
-const getLatestLocalCsv = () => {
-  const entries = Object.entries(CSV_FILES);
-  if (entries.length === 0) return null;
-
-  const impactEntries = entries.filter(([path]) => path.endsWith('_impact.csv'));
-  const candidateEntries = impactEntries.length > 0 ? impactEntries : entries;
-
-  // Choose the lexicographically latest file path from impact datasets first.
-  const [path, content] = candidateEntries.sort(([a], [b]) => a.localeCompare(b)).at(-1);
-  return {
-    fileName: path.split('/').pop() || 'Local dataset',
-    content
-  };
-};
-
-// --- ROBUST CSV PARSER ---
-const parseCSV = (str) => {
-  const result = [];
-  let row = [];
-  let inQuotes = false;
-  let val = "";
-  for (let i = 0; i < str.length; i++) {
-    let char = str[i];
-    if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
-      row.push(val);
-      val = "";
-    } else if (char === '\n' && !inQuotes) {
-      row.push(val);
-      result.push(row);
-      row = [];
-      val = "";
-    } else if (char === '\r' && !inQuotes) {
-      // ignore \r
-    } else {
-      val += char;
-    }
-  }
-  if (val || str[str.length - 1] === ',') {
-    row.push(val);
-  }
-  if (result.length > 0) result.push(row);
-
-  if (result.length < 2) return [];
-
-  const headers = result[0].map(h => h.trim());
-  return result.slice(1).map(r => {
-    let obj = {};
-    headers.forEach((h, i) => {
-      obj[h] = r[i] ? r[i].replace(/^"|"$/g, '').trim() : '';
-    });
-    return obj;
-  }).filter(obj => obj.Date); 
-};
-
-const formatChartDate = (date) => new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 const formatCompactNumber = (value) => {
   if (typeof value !== 'number') return value;
   if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
@@ -219,92 +161,54 @@ function ThreatChart({ data, title, type, color, isCumulative }) {
   );
 }
 
+function getInitialDashboardState() {
+  const latestCsv = getLatestLocalCsv();
+  if (!latestCsv) {
+    return {
+      data: [],
+      fileName: 'No local CSV found in /data',
+      loadError: 'No local CSV found in /data',
+    };
+  }
+
+  const parsed = parseCSV(latestCsv.content);
+  if (parsed.length === 0) {
+    return {
+      data: [],
+      fileName: latestCsv.fileName,
+      loadError: `No valid dashboard rows were found in ${latestCsv.fileName}.`,
+    };
+  }
+
+  return {
+    data: formatData(parsed),
+    fileName: latestCsv.fileName,
+    loadError: '',
+  };
+}
+
 export default function App() {
-  const [data, setData] = useState([]);
-  const [fileName, setFileName] = useState("Campaign Dataset (Feb 28 - Mar 10)");
+  const initialState = useMemo(() => getInitialDashboardState(), []);
+  const [data, setData] = useState(initialState.data);
+  const [fileName, setFileName] = useState(initialState.fileName);
   const [isCumulative, setIsCumulative] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [loadError, setLoadError] = useState(initialState.loadError);
   const fileInputRef = useRef(null);
   const PAGE_SIZE = 10;
 
-  function formatData(parsedData) {
-    const parseNum = (val) => {
-      if (val === undefined || val === null) return 0;
-      const cleaned = String(val).replace(/[,"]/g, '').trim();
-      return parseInt(cleaned, 10) || 0;
-    };
-
-    const grouped = {};
-    parsedData.forEach(row => {
-      if (!row.Date) return;
-      
-      const date = row.Date;
-      const likes = parseNum(row.Likes);
-      const balDet = parseNum(row.ballistic_detected);
-      const balInt = parseNum(row.ballistic_intercepted);
-      const balSea = parseNum(row.ballistic_sea);
-      const balLand = parseNum(row.ballistic_land);
-      
-      const uavDet = parseNum(row.UAV_detected);
-      const uavInt = parseNum(row.UAV_intercepted);
-      const uavSea = parseNum(row.UAV_sea);
-      const uavLand = parseNum(row.UAV_land);
-
-      if (!grouped[date]) {
-        grouped[date] = {
-          ...row,
-          Likes: likes,
-          ballistic_detected: balDet,
-          ballistic_intercepted: balInt,
-          ballistic_sea: balSea,
-          ballistic_land: balLand,
-          ballistic_neutralized: balInt + balSea,
-          UAV_detected: uavDet,
-          UAV_intercepted: uavInt,
-          UAV_sea: uavSea,
-          UAV_land: uavLand,
-          UAV_neutralized: uavInt + uavSea,
-        };
-      } else {
-        grouped[date].Likes += likes;
-        grouped[date].ballistic_detected = Math.max(grouped[date].ballistic_detected, balDet);
-        grouped[date].ballistic_intercepted = Math.max(grouped[date].ballistic_intercepted, balInt);
-        grouped[date].ballistic_sea = Math.max(grouped[date].ballistic_sea || 0, balSea);
-        grouped[date].ballistic_land = Math.max(grouped[date].ballistic_land || 0, balLand);
-        grouped[date].ballistic_neutralized = grouped[date].ballistic_intercepted + grouped[date].ballistic_sea;
-
-        grouped[date].UAV_detected = Math.max(grouped[date].UAV_detected, uavDet);
-        grouped[date].UAV_intercepted = Math.max(grouped[date].UAV_intercepted, uavInt);
-        grouped[date].UAV_sea = Math.max(grouped[date].UAV_sea || 0, uavSea);
-        grouped[date].UAV_land = Math.max(grouped[date].UAV_land || 0, uavLand);
-        grouped[date].UAV_neutralized = grouped[date].UAV_intercepted + grouped[date].UAV_sea;
-        
-        if (grouped[date].Title !== row.Title && row.Title) {
-          grouped[date].Title += " | " + row.Title;
-        }
-      }
-    });
-
-    return Object.values(grouped).sort((a, b) => new Date(b.Date) - new Date(a.Date));
-  }
-
-  useEffect(() => {
-    const latestCsv = getLatestLocalCsv();
-    if (!latestCsv) {
-      setFileName('No local CSV found in /data');
+  const applyCsvContent = (content, sourceName) => {
+    const parsed = parseCSV(content);
+    if (parsed.length === 0) {
       setData([]);
+      setLoadError(`No valid dashboard rows were found in ${sourceName}.`);
       return;
     }
 
-    const parsed = parseCSV(latestCsv.content);
-    const formatted = formatData(parsed);
-    setFileName(latestCsv.fileName);
-    setData(formatted);
-  }, []);
-
-  useEffect(() => {
+    setData(formatData(parsed));
+    setLoadError('');
     setCurrentPage(1);
-  }, [fileName]);
+  };
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
@@ -313,8 +217,7 @@ export default function App() {
       const reader = new FileReader();
       reader.onload = (evt) => {
         const text = evt.target.result;
-        const parsed = parseCSV(text);
-        setData(formatData(parsed));
+        applyCsvContent(text, file.name);
       };
       reader.readAsText(file);
     }
@@ -354,16 +257,7 @@ export default function App() {
     };
   }, [data]);
 
-  const chartTimelineData = useMemo(
-    () =>
-      [...data]
-        .sort((a, b) => new Date(a.Date) - new Date(b.Date))
-        .map((day) => ({
-          ...day,
-          dateLabel: formatChartDate(day.Date),
-        })),
-    [data]
-  );
+  const chartTimelineData = useMemo(() => toTimelineData(data), [data]);
 
   const cumulativeData = useMemo(() => {
     return chartTimelineData.reduce(
@@ -406,14 +300,11 @@ export default function App() {
   }, [chartTimelineData]);
 
   const totalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE));
+  const activePage = Math.min(currentPage, totalPages);
   const paginatedData = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE;
+    const start = (activePage - 1) * PAGE_SIZE;
     return data.slice(start, start + PAGE_SIZE);
-  }, [currentPage, data]);
-
-  useEffect(() => {
-    setCurrentPage((page) => Math.min(page, totalPages));
-  }, [totalPages]);
+  }, [activePage, data]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans p-4 md:p-8 selection:bg-blue-500/30 flex flex-col">
@@ -438,16 +329,22 @@ export default function App() {
             ref={fileInputRef} 
             onChange={handleFileUpload} 
           />
-          {/* <button 
+          <button 
             onClick={() => fileInputRef.current.click()}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-blue-900/20"
           >
             <Upload className="w-4 h-4" />
             <span className="hidden sm:inline">Upload Update CSV</span>
             <span className="sm:hidden">Upload</span>
-          </button> */}
+          </button>
         </div>
       </header>
+
+      {loadError && (
+        <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          {loadError}
+        </div>
+      )}
 
       {/* Top Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -558,7 +455,7 @@ export default function App() {
             </div>
             {data.length > 0 && (
               <div className="text-xs text-slate-500">
-                Showing {Math.min((currentPage - 1) * PAGE_SIZE + 1, data.length)}-{Math.min(currentPage * PAGE_SIZE, data.length)} of {data.length}
+                Showing {Math.min((activePage - 1) * PAGE_SIZE + 1, data.length)}-{Math.min(activePage * PAGE_SIZE, data.length)} of {data.length}
               </div>
             )}
           </div>
@@ -575,7 +472,7 @@ export default function App() {
             </thead>
             <tbody className="divide-y divide-slate-800/50">
               {paginatedData.map((row, idx) => (
-                <tr key={idx} className="hover:bg-slate-800/50 transition-colors">
+                <tr key={`${row.Date}-${row.URL || idx}`} className="hover:bg-slate-800/50 transition-colors">
                   <td className="px-4 py-3 font-mono text-slate-400 whitespace-nowrap">{row.Date}</td>
                   <td className="px-4 py-3">
                     <div className="font-medium text-slate-200 line-clamp-1" title={row.Title}>{row.Title}</div>
@@ -613,13 +510,13 @@ export default function App() {
         {data.length > PAGE_SIZE && (
           <div className="flex items-center justify-between gap-4 border-t border-slate-800 bg-slate-900/70 px-4 py-3">
             <p className="text-xs text-slate-500">
-              Page {currentPage} of {totalPages}
+              Page {activePage} of {totalPages}
             </p>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-                disabled={currentPage === 1}
+                disabled={activePage === 1}
                 className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 transition-colors hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Previous
@@ -627,7 +524,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
-                disabled={currentPage === totalPages}
+                disabled={activePage === totalPages}
                 className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 transition-colors hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Next
@@ -639,7 +536,7 @@ export default function App() {
 
       {/* Footer / Disclaimer */}
       <footer className="mt-16 pt-8 border-t border-slate-800 text-center text-slate-400 text-sm pb-8">
-        <div className="bg-slate-900/60 border border-slate-800 p-6 rounded-xl max-w-3xl mx-auto mb-6 flex flex-col items-center shadow-lg">
+        <div className="mb-6 flex w-full flex-col items-center rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-lg">
           <div className="bg-amber-500/10 p-3 rounded-full mb-3">
             <Info className="w-6 h-6 text-amber-500" />
           </div>
@@ -656,7 +553,7 @@ export default function App() {
             </p>
           </div>
         </div>
-        <p className="max-w-2xl mx-auto">
+        <p className="w-full">
           If you spot any inaccuracies or discrepancies in the data extraction, please report them to me so the dataset can be promptly updated.
         </p>
       </footer>

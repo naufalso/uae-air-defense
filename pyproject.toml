@@ -6,14 +6,28 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "instaloader>=4.14.2",
+    "requests>=2.32.5",
 ]
+
+[project.scripts]
+uae-scrape-instagram = "uae_defense.cli:scrape_instagram_main"
+uae-build-raw-from-urls = "uae_defense.cli:build_raw_from_urls_main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "ruff>=0.13.0",
+]
 
 [tool.uv]
 package = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/uae_defense"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
