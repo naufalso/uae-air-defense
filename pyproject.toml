@@ -1,0 +1,19 @@
+[project]
+name = "uae-air-defense"
+version = "0.1.0"
+description = "Instagram scraping utilities and dashboard assets for UAE air defense analysis."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "instaloader>=4.14.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/uae_defense"]

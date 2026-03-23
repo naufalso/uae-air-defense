@@ -1,5 +1,17 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ShieldAlert, Crosshair, Activity, Upload, Database, AlertTriangle, Info, MapPin } from 'lucide-react';
+import { ShieldAlert, Crosshair, Activity, Upload, Database, Info, MapPin } from 'lucide-react';
+import {
+  Area,
+  Bar,
+  Brush,
+  CartesianGrid,
+  ComposedChart,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 
 // Load all CSV files in ../data as raw text at build time.
 const CSV_FILES = import.meta.glob('../data/*.csv', {
@@ -12,8 +24,11 @@ const getLatestLocalCsv = () => {
   const entries = Object.entries(CSV_FILES);
   if (entries.length === 0) return null;
 
-  // Choose the lexicographically latest file path (works for date-versioned names).
-  const [path, content] = entries.sort(([a], [b]) => a.localeCompare(b)).at(-1);
+  const impactEntries = entries.filter(([path]) => path.endsWith('_impact.csv'));
+  const candidateEntries = impactEntries.length > 0 ? impactEntries : entries;
+
+  // Choose the lexicographically latest file path from impact datasets first.
+  const [path, content] = candidateEntries.sort(([a], [b]) => a.localeCompare(b)).at(-1);
   return {
     fileName: path.split('/').pop() || 'Local dataset',
     content
@@ -61,27 +76,158 @@ const parseCSV = (str) => {
   }).filter(obj => obj.Date); 
 };
 
+const formatChartDate = (date) => new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+const formatCompactNumber = (value) => {
+  if (typeof value !== 'number') return value;
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
+  return value.toLocaleString();
+};
+
+function ThreatTooltip({ active, payload, type, color, isCumulative }) {
+  if (!active || !payload?.length) return null;
+
+  const point = payload[0].payload;
+  const prefix = type === 'ballistic' ? 'ballistic' : 'UAV';
+  const detected = point[`${prefix}_detected`] || 0;
+  const neutralized = point[`${prefix}_neutralized`] || 0;
+  const intercepted = point[`${prefix}_intercepted`] || 0;
+  const seaImpact = point[`${prefix}_sea`] || 0;
+  const landImpact = point[`${prefix}_land`] || 0;
+  const protectionRate = detected > 0 ? ((neutralized / detected) * 100).toFixed(1) : '0.0';
+
+  return (
+    <div className="min-w-[180px] rounded-lg border border-slate-700 bg-slate-950/95 p-3 text-xs text-slate-200 shadow-2xl backdrop-blur">
+      <div className="mb-2 border-b border-slate-800 pb-2">
+        <div className="font-semibold text-white">{point.Date}</div>
+        <div className="text-[11px] uppercase tracking-wide text-slate-500">
+          {isCumulative ? 'Cumulative' : 'Daily'} {type === 'ballistic' ? 'Ballistic Missiles' : 'UAV / Drones'}
+        </div>
+      </div>
+      <div className="space-y-1">
+        <div className="flex justify-between gap-4">
+          <span className="text-slate-400">Detected</span>
+          <span className="font-mono text-slate-200">{detected.toLocaleString()}</span>
+        </div>
+        <div className="flex justify-between gap-4">
+          <span className="text-slate-400">Neutralized</span>
+          <span className="font-mono" style={{ color }}>{neutralized.toLocaleString()}</span>
+        </div>
+        <div className="flex justify-between gap-4 text-slate-400">
+          <span>Intercepted</span>
+          <span className="font-mono text-slate-200">{intercepted.toLocaleString()}</span>
+        </div>
+        <div className="flex justify-between gap-4 text-slate-400">
+          <span>Sea Impact</span>
+          <span className="font-mono text-slate-200">{seaImpact.toLocaleString()}</span>
+        </div>
+        <div className="flex justify-between gap-4 text-slate-400">
+          <span>Land Impact</span>
+          <span className={`font-mono ${landImpact > 0 ? 'text-red-400' : 'text-slate-200'}`}>{landImpact.toLocaleString()}</span>
+        </div>
+      </div>
+      <div className="mt-2 border-t border-slate-800 pt-2 text-slate-300">
+        Protection Rate: <span className="font-semibold text-white">{protectionRate}%</span>
+      </div>
+    </div>
+  );
+}
+
+function ThreatChart({ data, title, type, color, isCumulative }) {
+  const prefix = type === 'ballistic' ? 'ballistic' : 'UAV';
+  const detectedKey = `${prefix}_detected`;
+  const neutralizedKey = `${prefix}_neutralized`;
+
+  return (
+    <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg flex flex-col h-80">
+      <div className="mb-3 flex items-center justify-between gap-4">
+        <h3 className="text-slate-300 font-semibold">{title}</h3>
+        <div className="flex gap-4 text-xs">
+          <div className="flex items-center gap-1">
+            <div className="h-3 w-3 rounded-sm bg-slate-500/70" />
+            <span className="text-slate-400">Detected</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="h-3 w-3 rounded-sm" style={{ backgroundColor: color }} />
+            <span className="text-slate-400">Neutralized</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 20 }}>
+            <CartesianGrid stroke="#334155" strokeDasharray="3 3" vertical={false} />
+            <XAxis
+              dataKey="dateLabel"
+              tick={{ fill: '#94a3b8', fontSize: 11 }}
+              minTickGap={20}
+              tickLine={false}
+              axisLine={{ stroke: '#475569' }}
+            />
+            <YAxis
+              tick={{ fill: '#94a3b8', fontSize: 11 }}
+              tickFormatter={formatCompactNumber}
+              tickLine={false}
+              axisLine={false}
+              width={42}
+            />
+            <Tooltip
+              cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }}
+              content={<ThreatTooltip type={type} color={color} isCumulative={isCumulative} />}
+            />
+            {isCumulative ? (
+              <>
+                <Line
+                  type="monotone"
+                  dataKey={detectedKey}
+                  stroke="#64748b"
+                  strokeWidth={2}
+                  dot={false}
+                  name="Detected"
+                />
+                <Area
+                  type="monotone"
+                  dataKey={neutralizedKey}
+                  stroke={color}
+                  fill={color}
+                  fillOpacity={0.2}
+                  strokeWidth={2.5}
+                  dot={false}
+                  name="Neutralized"
+                />
+              </>
+            ) : (
+              <>
+                <Bar dataKey={detectedKey} fill="rgba(100, 116, 139, 0.45)" radius={[4, 4, 0, 0]} name="Detected" />
+                <Bar dataKey={neutralizedKey} fill={color} radius={[4, 4, 0, 0]} name="Neutralized" />
+              </>
+            )}
+            <Brush
+              dataKey="dateLabel"
+              height={20}
+              startIndex={0}
+              endIndex={Math.max(0, data.length - 1)}
+              travellerWidth={10}
+              stroke={color}
+              fill="#0f172a"
+              tickFormatter={() => ''}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [data, setData] = useState([]);
   const [fileName, setFileName] = useState("Campaign Dataset (Feb 28 - Mar 10)");
   const [isCumulative, setIsCumulative] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const fileInputRef = useRef(null);
+  const PAGE_SIZE = 10;
 
-  useEffect(() => {
-    const latestCsv = getLatestLocalCsv();
-    if (!latestCsv) {
-      setFileName('No local CSV found in /data');
-      setData([]);
-      return;
-    }
-
-    const parsed = parseCSV(latestCsv.content);
-    const formatted = formatData(parsed);
-    setFileName(latestCsv.fileName);
-    setData(formatted);
-  }, []);
-
-  const formatData = (parsedData) => {
+  function formatData(parsedData) {
     const parseNum = (val) => {
       if (val === undefined || val === null) return 0;
       const cleaned = String(val).replace(/[,"]/g, '').trim();
@@ -139,8 +285,26 @@ export default function App() {
       }
     });
 
-    return Object.values(grouped).sort((a, b) => new Date(a.Date) - new Date(b.Date));
-  };
+    return Object.values(grouped).sort((a, b) => new Date(b.Date) - new Date(a.Date));
+  }
+
+  useEffect(() => {
+    const latestCsv = getLatestLocalCsv();
+    if (!latestCsv) {
+      setFileName('No local CSV found in /data');
+      setData([]);
+      return;
+    }
+
+    const parsed = parseCSV(latestCsv.content);
+    const formatted = formatData(parsed);
+    setFileName(latestCsv.fileName);
+    setData(formatted);
+  }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [fileName]);
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
@@ -190,216 +354,66 @@ export default function App() {
     };
   }, [data]);
 
+  const chartTimelineData = useMemo(
+    () =>
+      [...data]
+        .sort((a, b) => new Date(a.Date) - new Date(b.Date))
+        .map((day) => ({
+          ...day,
+          dateLabel: formatChartDate(day.Date),
+        })),
+    [data]
+  );
+
   const cumulativeData = useMemo(() => {
-    let balDet = 0, balInt = 0, balSea = 0, balLand = 0;
-    let uavDet = 0, uavInt = 0, uavSea = 0, uavLand = 0;
+    return chartTimelineData.reduce(
+      (acc, day) => {
+        const totals = {
+          ballistic_detected: acc.totals.ballistic_detected + day.ballistic_detected,
+          ballistic_intercepted: acc.totals.ballistic_intercepted + day.ballistic_intercepted,
+          ballistic_sea: acc.totals.ballistic_sea + (day.ballistic_sea || 0),
+          ballistic_land: acc.totals.ballistic_land + (day.ballistic_land || 0),
+          UAV_detected: acc.totals.UAV_detected + day.UAV_detected,
+          UAV_intercepted: acc.totals.UAV_intercepted + day.UAV_intercepted,
+          UAV_sea: acc.totals.UAV_sea + (day.UAV_sea || 0),
+          UAV_land: acc.totals.UAV_land + (day.UAV_land || 0),
+        };
 
-    return data.map(d => {
-      balDet += d.ballistic_detected;
-      balInt += d.ballistic_intercepted;
-      balSea += d.ballistic_sea || 0;
-      balLand += d.ballistic_land || 0;
+        acc.rows.push({
+          ...day,
+          ...totals,
+          ballistic_neutralized: totals.ballistic_intercepted + totals.ballistic_sea,
+          UAV_neutralized: totals.UAV_intercepted + totals.UAV_sea,
+        });
 
-      uavDet += d.UAV_detected;
-      uavInt += d.UAV_intercepted;
-      uavSea += d.UAV_sea || 0;
-      uavLand += d.UAV_land || 0;
+        acc.totals = totals;
+        return acc;
+      },
+      {
+        rows: [],
+        totals: {
+          ballistic_detected: 0,
+          ballistic_intercepted: 0,
+          ballistic_sea: 0,
+          ballistic_land: 0,
+          UAV_detected: 0,
+          UAV_intercepted: 0,
+          UAV_sea: 0,
+          UAV_land: 0,
+        },
+      }
+    ).rows;
+  }, [chartTimelineData]);
 
-      return {
-        ...d,
-        ballistic_detected: balDet,
-        ballistic_intercepted: balInt,
-        ballistic_sea: balSea,
-        ballistic_land: balLand,
-        ballistic_neutralized: balInt + balSea,
+  const totalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE));
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return data.slice(start, start + PAGE_SIZE);
+  }, [currentPage, data]);
 
-        UAV_detected: uavDet,
-        UAV_intercepted: uavInt,
-        UAV_sea: uavSea,
-        UAV_land: uavLand,
-        UAV_neutralized: uavInt + uavSea
-      };
-    });
-  }, [data]);
-
-  const chartData = isCumulative ? cumulativeData : data;
-
-  // --- CHART COMPONENTS ---
-  const LineChart = ({ data, detectedKey, neutralizedKey, type, strokeColor, title }) => {
-    const maxVal = Math.max(10, ...data.map(d => d[detectedKey] || 0)); 
-    const dataLen = Math.max(1, data.length - 1);
-    
-    const intKey = type === 'ballistic' ? 'ballistic_intercepted' : 'UAV_intercepted';
-    const seaKey = type === 'ballistic' ? 'ballistic_sea' : 'UAV_sea';
-    const landKey = type === 'ballistic' ? 'ballistic_land' : 'UAV_land';
-
-    return (
-      <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg flex flex-col h-80">
-        <h3 className="text-slate-300 font-semibold mb-2 flex justify-between items-center z-10">
-          <span>{title}</span>
-          <div className="flex gap-4 text-xs">
-            <div className="flex items-center gap-1">
-              <div className="w-4 h-0.5 bg-slate-500 border-t border-dashed border-slate-500"></div> Detected
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-4 h-0.5" style={{ backgroundColor: strokeColor }}></div> Neutralized
-            </div>
-          </div>
-        </h3>
-        
-        <div className="flex-1 relative flex mt-4">
-          <div className="w-12 flex flex-col justify-between text-[10px] text-slate-500 pb-6 pr-2 text-right z-10 font-mono">
-            <span>{maxVal.toLocaleString()}</span>
-            <span>{Math.round(maxVal / 2).toLocaleString()}</span>
-            <span>0</span>
-          </div>
-          
-          <div className="flex-1 relative mb-6 border-l border-b border-slate-600">
-            <svg className="absolute inset-0 w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
-              <defs>
-                <linearGradient id={`grad-${neutralizedKey}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={strokeColor} stopOpacity="0.35" />
-                  <stop offset="100%" stopColor={strokeColor} stopOpacity="0" />
-                </linearGradient>
-              </defs>
-
-              <line x1="0" y1="50" x2="100" y2="50" stroke="#334155" strokeWidth="1" vectorEffect="non-scaling-stroke" strokeDasharray="4 4" />
-              
-              <polygon 
-                fill={`url(#grad-${neutralizedKey})`}
-                points={`0,100 ${data.map((d, i) => `${(i / dataLen) * 100},${100 - ((d[neutralizedKey] || 0) / maxVal) * 100}`).join(' ')} 100,100`}
-              />
-
-              <polyline
-                fill="none"
-                stroke="#64748b"
-                strokeWidth="2"
-                strokeDasharray="5 5"
-                vectorEffect="non-scaling-stroke"
-                points={data.map((d, i) => `${(i / dataLen) * 100},${100 - ((d[detectedKey] || 0) / maxVal) * 100}`).join(' ')}
-              />
-              <polyline
-                fill="none"
-                stroke={strokeColor}
-                strokeWidth="2.5"
-                vectorEffect="non-scaling-stroke"
-                points={data.map((d, i) => `${(i / dataLen) * 100},${100 - ((d[neutralizedKey] || 0) / maxVal) * 100}`).join(' ')}
-              />
-            </svg>
-
-            <div className="absolute inset-0 w-full h-full">
-              {data.map((day, idx) => {
-                const detVal = day[detectedKey] || 0;
-                const neutVal = day[neutralizedKey] || 0;
-                const intVal = day[intKey] || 0;
-                const seaVal = day[seaKey] || 0;
-                const landVal = day[landKey] || 0;
-                const rate = detVal > 0 ? ((neutVal / detVal) * 100).toFixed(0) : 0;
-                const dateStr = new Date(day.Date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-                const xPos = (idx / dataLen) * 100;
-                const detY = 100 - (detVal / maxVal) * 100;
-                const intY = 100 - (neutVal / maxVal) * 100;
-                
-                return (
-                  <div 
-                    key={idx} 
-                    className="absolute top-0 bottom-0 group cursor-crosshair z-10" 
-                    style={{ left: `${xPos}%`, width: `${100 / Math.max(1, data.length)}%`, transform: 'translateX(-50%)' }}
-                  >
-                    <div className="absolute -top-[105px] bg-slate-900 border border-slate-600 text-white text-xs p-2.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-30 whitespace-nowrap pointer-events-none shadow-xl transform -translate-x-1/2 left-1/2 min-w-[140px]">
-                      <div className="font-bold text-slate-300 mb-1.5 pb-1.5 border-b border-slate-700">{day.Date}</div>
-                      <div className="flex justify-between">Detected: <span className="font-mono text-slate-400">{detVal.toLocaleString()}</span></div>
-                      <div className="flex justify-between mb-1">Neutralized: <span className="font-mono" style={{ color: strokeColor }}>{neutVal.toLocaleString()}</span></div>
-                      
-                      <div className="text-[10px] text-slate-400 pl-2 border-l-2 border-slate-700 space-y-0.5 my-1.5">
-                        <div className="flex justify-between gap-3">↳ Intercepted: <span className="font-mono">{intVal.toLocaleString()}</span></div>
-                        <div className="flex justify-between gap-3">↳ Sea Impact: <span className="font-mono">{seaVal.toLocaleString()}</span></div>
-                      </div>
-                      
-                      {landVal > 0 && <div className="text-red-400 flex justify-between font-medium mt-1">Land Impact: <span className="font-mono">{landVal.toLocaleString()}</span></div>}
-                      <div className="mt-1.5 pt-1.5 border-t border-slate-700 text-slate-300 font-medium">Protection: {rate}%</div>
-                    </div>
-
-                    <div className="w-px h-full bg-slate-500/0 group-hover:bg-slate-500/50 mx-auto transition-colors" />
-
-                    <div className="absolute w-2 h-2 rounded-full border border-slate-900 z-20 left-1/2 transform -translate-x-1/2 transition-transform group-hover:scale-150" style={{ top: `calc(${detY}% - 4px)`, backgroundColor: "#94a3b8" }} />
-                    <div className="absolute w-2.5 h-2.5 rounded-full border-2 border-slate-900 z-20 left-1/2 transform -translate-x-1/2 transition-transform group-hover:scale-150" style={{ top: `calc(${intY}% - 5px)`, backgroundColor: strokeColor }} />
-
-                    <div className="text-[10px] text-slate-400 absolute -bottom-6 left-1/2 transform -translate-x-1/2 w-16 text-center truncate pointer-events-none">
-                      {dateStr}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const BarChart = ({ data, detectedKey, neutralizedKey, type, colorClass, title }) => {
-    const maxVal = Math.max(10, ...data.map(d => d[detectedKey] || 0));
-
-    const intKey = type === 'ballistic' ? 'ballistic_intercepted' : 'UAV_intercepted';
-    const seaKey = type === 'ballistic' ? 'ballistic_sea' : 'UAV_sea';
-    const landKey = type === 'ballistic' ? 'ballistic_land' : 'UAV_land';
-
-    return (
-      <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg flex flex-col h-80">
-        <h3 className="text-slate-300 font-semibold mb-4 flex justify-between items-center">
-          <span>{title}</span>
-          <div className="flex gap-4 text-xs">
-            <div className="flex items-center gap-1"><div className="w-3 h-3 bg-slate-600 rounded-sm"></div> Detected</div>
-            <div className="flex items-center gap-1"><div className={`w-3 h-3 ${colorClass} rounded-sm`}></div> Neutralized</div>
-          </div>
-        </h3>
-        
-        <div className="flex-1 flex items-end gap-2 relative mt-4">
-          {data.map((day, idx) => {
-            const hDet = ((day[detectedKey] || 0) / maxVal) * 100;
-            const hNeut = ((day[neutralizedKey] || 0) / maxVal) * 100;
-            
-            const detVal = day[detectedKey] || 0;
-            const neutVal = day[neutralizedKey] || 0;
-            const intVal = day[intKey] || 0;
-            const seaVal = day[seaKey] || 0;
-            const landVal = day[landKey] || 0;
-
-            const rate = detVal > 0 ? ((neutVal / detVal) * 100).toFixed(0) : 0;
-            const dateStr = new Date(day.Date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-            
-            return (
-              <div key={idx} className="flex-1 flex flex-col items-center group relative h-full justify-end">
-                <div className="absolute -top-[105px] bg-slate-900 border border-slate-600 text-white text-xs p-2.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10 whitespace-nowrap pointer-events-none shadow-xl min-w-[140px]">
-                  <div className="font-bold text-slate-300 mb-1.5 pb-1.5 border-b border-slate-700">{day.Date}</div>
-                  <div className="flex justify-between">Detected: <span className="font-mono text-slate-400">{detVal.toLocaleString()}</span></div>
-                  <div className="flex justify-between mb-1">Neutralized: <span className={`font-mono ${colorClass.replace('bg-', 'text-')}`}>{neutVal.toLocaleString()}</span></div>
-                  
-                  <div className="text-[10px] text-slate-400 pl-2 border-l-2 border-slate-700 space-y-0.5 my-1.5">
-                    <div className="flex justify-between gap-3">↳ Intercepted: <span className="font-mono">{intVal.toLocaleString()}</span></div>
-                    <div className="flex justify-between gap-3">↳ Sea Impact: <span className="font-mono">{seaVal.toLocaleString()}</span></div>
-                  </div>
-                  
-                  {landVal > 0 && <div className="text-red-400 flex justify-between font-medium mt-1">Land Impact: <span className="font-mono">{landVal.toLocaleString()}</span></div>}
-                  <div className="mt-1.5 pt-1.5 border-t border-slate-700 text-slate-300 font-medium">Protection: {rate}%</div>
-                </div>
-
-                <div className="w-full relative flex items-end justify-center" style={{ height: '100%' }}>
-                   <div className="absolute bottom-0 w-full max-w-[40px] bg-slate-700/80 rounded-t-sm transition-all duration-500 ease-out" style={{ height: `${Math.max(hDet, 1)}%` }}></div>
-                   <div className={`absolute bottom-0 w-full max-w-[40px] ${colorClass} rounded-t-sm transition-all duration-500 ease-out z-0`} style={{ height: `${hNeut}%` }}></div>
-                </div>
-                
-                <div className="text-[10px] text-slate-400 mt-2 truncate w-full text-center">
-                  {dateStr}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans p-4 md:p-8 selection:bg-blue-500/30 flex flex-col">
@@ -424,14 +438,14 @@ export default function App() {
             ref={fileInputRef} 
             onChange={handleFileUpload} 
           />
-          <button 
+          {/* <button 
             onClick={() => fileInputRef.current.click()}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-blue-900/20"
           >
             <Upload className="w-4 h-4" />
             <span className="hidden sm:inline">Upload Update CSV</span>
             <span className="sm:hidden">Upload</span>
-          </button>
+          </button> */}
         </div>
       </header>
 
@@ -518,13 +532,13 @@ export default function App() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
         {isCumulative ? (
           <>
-            <LineChart data={cumulativeData} title="Cumulative Ballistic Missiles" type="ballistic" detectedKey="ballistic_detected" neutralizedKey="ballistic_neutralized" strokeColor="#ef4444" />
-            <LineChart data={cumulativeData} title="Cumulative UAV / Drones" type="UAV" detectedKey="UAV_detected" neutralizedKey="UAV_neutralized" strokeColor="#3b82f6" />
+            <ThreatChart data={cumulativeData} title="Cumulative Ballistic Missiles" type="ballistic" color="#ef4444" isCumulative />
+            <ThreatChart data={cumulativeData} title="Cumulative UAV / Drones" type="UAV" color="#3b82f6" isCumulative />
           </>
         ) : (
           <>
-            <BarChart data={data} title="Daily Ballistic Missiles" type="ballistic" detectedKey="ballistic_detected" neutralizedKey="ballistic_neutralized" colorClass="bg-red-500" />
-            <BarChart data={data} title="Daily UAV / Drones" type="UAV" detectedKey="UAV_detected" neutralizedKey="UAV_neutralized" colorClass="bg-blue-500" />
+            <ThreatChart data={chartTimelineData} title="Daily Ballistic Missiles" type="ballistic" color="#ef4444" isCumulative={false} />
+            <ThreatChart data={chartTimelineData} title="Daily UAV / Drones" type="UAV" color="#3b82f6" isCumulative={false} />
           </>
         )}
       </div>
@@ -536,15 +550,22 @@ export default function App() {
             <Database className="w-5 h-5 text-slate-400" />
             <h3 className="font-semibold text-white">Tactical Incident Log</h3>
           </div>
-          <div className="text-xs text-slate-400 flex gap-4">
-             <div><span className="text-emerald-400 font-bold">Int:</span> Intercepted</div>
-             <div><span className="text-blue-400 font-bold">Sea:</span> Sea Impact</div>
-             <div><span className="text-red-400 font-bold">Lnd:</span> Land Impact</div>
+          <div className="flex flex-col items-end gap-2">
+            <div className="text-xs text-slate-400 flex gap-4">
+               <div><span className="text-emerald-400 font-bold">Int:</span> Intercepted</div>
+               <div><span className="text-blue-400 font-bold">Sea:</span> Sea Impact</div>
+               <div><span className="text-red-400 font-bold">Lnd:</span> Land Impact</div>
+            </div>
+            {data.length > 0 && (
+              <div className="text-xs text-slate-500">
+                Showing {Math.min((currentPage - 1) * PAGE_SIZE + 1, data.length)}-{Math.min(currentPage * PAGE_SIZE, data.length)} of {data.length}
+              </div>
+            )}
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="max-h-[32rem] overflow-auto">
           <table className="w-full text-left text-sm text-slate-300">
-            <thead className="bg-slate-800 text-slate-400 uppercase text-[11px] font-semibold tracking-wider">
+            <thead className="sticky top-0 z-10 bg-slate-800 text-slate-400 uppercase text-[11px] font-semibold tracking-wider">
               <tr>
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Title/Summary</th>
@@ -553,7 +574,7 @@ export default function App() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/50">
-              {data.map((row, idx) => (
+              {paginatedData.map((row, idx) => (
                 <tr key={idx} className="hover:bg-slate-800/50 transition-colors">
                   <td className="px-4 py-3 font-mono text-slate-400 whitespace-nowrap">{row.Date}</td>
                   <td className="px-4 py-3">
@@ -589,6 +610,31 @@ export default function App() {
             </tbody>
           </table>
         </div>
+        {data.length > PAGE_SIZE && (
+          <div className="flex items-center justify-between gap-4 border-t border-slate-800 bg-slate-900/70 px-4 py-3">
+            <p className="text-xs text-slate-500">
+              Page {currentPage} of {totalPages}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                disabled={currentPage === 1}
+                className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 transition-colors hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                disabled={currentPage === totalPages}
+                className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 transition-colors hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Footer / Disclaimer */}
