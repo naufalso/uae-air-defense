@@ -66,6 +66,7 @@ uv run python skills/update-modgovae-impact-csv/scripts/append_modgovae_impact.p
   - `ballistic_detected = ballistic_intercepted = X`
   - `UAV_detected = UAV_intercepted = Y`
   - `ballistic_sea = ballistic_land = UAV_sea = UAV_land = 0`
+- It also handles single-type daily posts such as `engaged 9 UAVs` by setting the missing threat type to `0`.
 - Deduplicate by URL and shortcode.
 
 ## Notes

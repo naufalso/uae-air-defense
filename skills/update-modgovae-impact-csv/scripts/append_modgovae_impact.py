@@ -55,9 +55,11 @@ def parse_daily_counts(caption: str) -> tuple[int, int] | None:
     sentence = first_sentence(caption)
     ballistic_match = BALLISTIC_RE.search(sentence)
     uav_match = UAV_RE.search(sentence)
-    if not ballistic_match or not uav_match:
+    if not ballistic_match and not uav_match:
         return None
-    return int(ballistic_match.group(1)), int(uav_match.group(1))
+    ballistic_count = int(ballistic_match.group(1)) if ballistic_match else 0
+    uav_count = int(uav_match.group(1)) if uav_match else 0
+    return ballistic_count, uav_count
 
 
 def extract_shortcode(url: str) -> str:
@@ -66,6 +68,10 @@ def extract_shortcode(url: str) -> str:
 
 
 def build_title(ballistic_count: int, uav_count: int) -> str:
+    if ballistic_count == 0:
+        return f"UAE air defences engage {uav_count} UAVs"
+    if uav_count == 0:
+        return f"UAE air defences engage {ballistic_count} ballistic missiles"
     return f"UAE air defences engage {ballistic_count} ballistic missiles, {uav_count} UAVs"
 
 
