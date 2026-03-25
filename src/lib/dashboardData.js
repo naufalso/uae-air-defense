@@ -9,6 +9,12 @@ const CHART_DATE_FORMATTER = new Intl.DateTimeFormat('en-GB', {
   month: 'short',
 });
 
+const SOURCE_DATE_FORMATTER = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+});
+
 export function getLatestLocalCsv() {
   const entries = Object.entries(CSV_FILES);
   if (entries.length === 0) {
@@ -19,9 +25,22 @@ export function getLatestLocalCsv() {
   const candidateEntries = impactEntries.length > 0 ? impactEntries : entries;
   const [path, content] = candidateEntries.sort(([a], [b]) => a.localeCompare(b)).at(-1);
 
+  const parsedRows = parseCSV(content);
+  const timestamps = parsedRows
+    .map((row) => parseDateValue(row.Date))
+    .filter((timestamp) => !Number.isNaN(timestamp))
+    .sort((a, b) => a - b);
+
   return {
     fileName: path.split('/').pop() || 'Local dataset',
     content,
+    dateRange:
+      timestamps.length > 0
+        ? {
+            start: SOURCE_DATE_FORMATTER.format(new Date(timestamps[0])),
+            end: SOURCE_DATE_FORMATTER.format(new Date(timestamps[timestamps.length - 1])),
+          }
+        : null,
   };
 }
 
