@@ -167,6 +167,7 @@ function getInitialDashboardState() {
     return {
       data: [],
       fileName: 'No local CSV found in /data',
+      dateRangeLabel: 'Date range unavailable',
       loadError: 'No local CSV found in /data',
     };
   }
@@ -176,6 +177,9 @@ function getInitialDashboardState() {
     return {
       data: [],
       fileName: latestCsv.fileName,
+      dateRangeLabel: latestCsv.dateRange
+        ? `${latestCsv.dateRange.start} - ${latestCsv.dateRange.end}`
+        : latestCsv.fileName,
       loadError: `No valid dashboard rows were found in ${latestCsv.fileName}.`,
     };
   }
@@ -183,17 +187,20 @@ function getInitialDashboardState() {
   return {
     data: formatData(parsed),
     fileName: latestCsv.fileName,
+    dateRangeLabel: latestCsv.dateRange
+      ? `${latestCsv.dateRange.start} - ${latestCsv.dateRange.end}`
+      : latestCsv.fileName,
     loadError: '',
   };
 }
 
 export default function App() {
   const initialState = useMemo(() => getInitialDashboardState(), []);
-  const [data, setData] = useState(initialState.data);
-  const [fileName, setFileName] = useState(initialState.fileName);
+  const [data] = useState(initialState.data);
+  const [dateRangeLabel] = useState(initialState.dateRangeLabel);
   const [isCumulative, setIsCumulative] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [loadError, setLoadError] = useState(initialState.loadError);
+  const [loadError] = useState(initialState.loadError);
   const PAGE_SIZE = 10;
 
   // --- DERIVED METRICS ---
@@ -289,8 +296,28 @@ export default function App() {
             <ShieldAlert className="text-red-500 h-8 w-8" />
             UAE Air Defense Incident Dashboard
           </h1>
-          <p className="text-slate-400 mt-1 flex items-center gap-2">
-            <Database className="w-4 h-4" /> Data Source: {fileName}
+          <p className="text-slate-400 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Database className="w-4 h-4" />
+            <span>Data Source: Instagram</span>
+            <a
+              href="https://www.instagram.com/modgovae"
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-400 transition-colors hover:text-blue-300 hover:underline"
+            >
+              @modgovae
+            </a>
+            <span className="text-slate-600">•</span>
+            <span>{dateRangeLabel}</span>
+            <span className="text-slate-600">•</span>
+            <a
+              href="https://github.com/naufalso/uae-air-defense"
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-400 transition-colors hover:text-blue-300 hover:underline"
+            >
+              GitHub source code
+            </a>
           </p>
         </div>
       </header>

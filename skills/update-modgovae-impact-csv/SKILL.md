@@ -9,7 +9,7 @@ Use this skill to extend the impact dataset in `data/*_impact.csv` from its last
 
 ## Files this skill uses
 
-- Impact CSV: `data/modgovae_posts_feb28_to_mar23_2026_impact.csv` or the latest `data/*_impact.csv`
+- Impact CSV: `data/modgovae_posts_impact.csv` or the latest `data/*_impact.csv`
 - URL list: `data/modgovae_urls_<start>_<end>.txt`
 - Raw CSV builder: `scripts/build_raw_from_urls.py`
 - Impact appender: `skills/update-modgovae-impact-csv/scripts/append_modgovae_impact.py`
@@ -40,7 +40,7 @@ uv run python scripts/build_raw_from_urls.py \
 
 ```bash
 uv run python skills/update-modgovae-impact-csv/scripts/append_modgovae_impact.py \
-  --impact-csv data/modgovae_posts_feb28_to_mar23_2026_impact.csv \
+  --impact-csv data/modgovae_posts_impact.csv \
   --raw-csv data/raw_modgovae_<start>_<end>.csv
 ```
 
